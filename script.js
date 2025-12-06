@@ -1,4 +1,5 @@
 // ===== CONFIGURATION =====
+// IMPORTANT: Replace with your actual Spotify Client ID
 const CLIENT_ID = '028b8be0a7eb40aeba632eecd0bf6e97'; // Get from developer.spotify.com
 const REDIRECT_URI = window.location.origin + window.location.pathname; // Auto-detect current URL
 const SCOPES = 'user-top-read user-read-currently-playing user-read-playback-state';
@@ -37,21 +38,81 @@ function updateProgressDisplay() {
     document.getElementById('songsExplored').textContent = songsExplored.size;
 }
 
-// ===== SPOTIFY AUTHENTICATION (Implicit Grant Flow) =====
-function login() {
+// ===== SPOTIFY AUTHENTICATION (PKCE Flow - No Backend Needed) =====
+
+// Generate code verifier and challenge for PKCE
+function generateCodeChallenge() {
+    const codeVerifier = generateRandomString(128);
+    localStorage.setItem('code_verifier', codeVerifier);
+    return codeVerifier;
+}
+
+function generateRandomString(length) {
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const values = crypto.getRandomValues(new Uint8Array(length));
+    return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+}
+
+async function sha256(plain) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(plain);
+    return window.crypto.subtle.digest('SHA-256', data);
+}
+
+function base64encode(input) {
+    return btoa(String.fromCharCode(...new Uint8Array(input)))
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+}
+
+async function login() {
+    const codeVerifier = generateCodeChallenge();
+    const hashed = await sha256(codeVerifier);
+    const codeChallenge = base64encode(hashed);
+    
     const authUrl = `https://accounts.spotify.com/authorize?` +
         `client_id=${CLIENT_ID}&` +
-        `response_type=token&` +
+        `response_type=code&` +
         `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
-        `scope=${encodeURIComponent(SCOPES)}`;
+        `scope=${encodeURIComponent(SCOPES)}&` +
+        `code_challenge_method=S256&` +
+        `code_challenge=${codeChallenge}`;
+    
     window.location.href = authUrl;
 }
 
-// Extract access token from URL hash (after redirect)
-function getAccessTokenFromUrl() {
-    const hash = window.location.hash.substring(1);
-    const params = new URLSearchParams(hash);
-    return params.get('access_token');
+// Extract authorization code from URL (after redirect)
+function getAuthCodeFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('code');
+}
+
+// Exchange authorization code for access token
+async function getAccessToken(code) {
+    const codeVerifier = localStorage.getItem('code_verifier');
+    
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+            client_id: CLIENT_ID,
+            grant_type: 'authorization_code',
+            code: code,
+            redirect_uri: REDIRECT_URI,
+            code_verifier: codeVerifier,
+        })
+    });
+    
+    if (!response.ok) {
+        throw new Error('Failed to get access token');
+    }
+    
+    const data = await response.json();
+    localStorage.removeItem('code_verifier'); // Clean up
+    return data.access_token;
 }
 
 // ===== SPOTIFY API CALLS =====
@@ -255,11 +316,11 @@ async function init() {
     // Load saved progress
     loadProgress();
     
-    // Check for access token in URL
-    accessToken = getAccessTokenFromUrl();
+    // Check for authorization code in URL
+    const code = getAuthCodeFromUrl();
     
-    if (accessToken) {
-        // Clear token from URL for security
+    if (code) {
+        // Clear code from URL for security
         window.history.replaceState({}, document.title, window.location.pathname);
         
         // Hide auth section, show loading
@@ -267,6 +328,9 @@ async function init() {
         document.getElementById('loading').style.display = 'block';
         
         try {
+            // Exchange code for access token
+            accessToken = await getAccessToken(code);
+            
             // Fetch user's top tracks
             const data = await fetchTopTracks(accessToken);
             
