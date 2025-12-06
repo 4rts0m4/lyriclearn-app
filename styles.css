@@ -241,6 +241,8 @@ h1 {
     line-height: 2;
     font-size: 1.1em;
     border: 2px solid #f0f0f0;
+    max-height: 600px;
+    overflow-y: auto;
 }
 
 .lyrics-placeholder {
@@ -251,6 +253,48 @@ h1 {
 
 .lyrics-text {
     white-space: pre-line;
+}
+
+.lyrics-text p {
+    margin-bottom: 12px;
+}
+
+/* Dual column layout for original + translation */
+.lyrics-dual {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+}
+
+.lyrics-column {
+    border-right: 2px solid #f0f0f0;
+    padding-right: 24px;
+}
+
+.lyrics-column:last-child {
+    border-right: none;
+    padding-right: 0;
+    padding-left: 24px;
+}
+
+.lyrics-column h4 {
+    color: #1DB954;
+    margin-bottom: 16px;
+    font-size: 1.1em;
+    position: sticky;
+    top: 0;
+    background: white;
+    padding: 8px 0;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+.lyrics-column p {
+    margin-bottom: 12px;
+    line-height: 1.8;
+}
+
+.lyrics-translation {
+    color: #666;
 }
 
 .word {
@@ -264,6 +308,27 @@ h1 {
     background: #ffffcc;
     color: #1DB954;
     font-weight: 600;
+}
+
+/* Mobile: Stack columns vertically */
+@media (max-width: 768px) {
+    .lyrics-dual {
+        grid-template-columns: 1fr;
+    }
+    
+    .lyrics-column {
+        border-right: none;
+        border-bottom: 2px solid #f0f0f0;
+        padding-right: 0;
+        padding-bottom: 24px;
+        margin-bottom: 24px;
+    }
+    
+    .lyrics-column:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+        padding-left: 0;
+    }
 }
 
 /* Definition Popup */

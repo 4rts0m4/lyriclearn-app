@@ -131,68 +131,81 @@ async function fetchTopTracks(token) {
     return response.json();
 }
 
-// ===== LYRICS FETCHING (Mock for MVP) =====
-// Note: In production, you'd use Musixmatch API or similar
-async function fetchLyrics(trackName, artistName) {
-    // Mock lyrics for demonstration
-    // In production: Call lyrics API here
-    
-    const mockLyrics = `Esta es una letra de ejemplo para "${trackName}"
-    
-Verso 1:
-Esta aplicación te ayuda a aprender
-Nuevas palabras mientras escuchas música
-Haz clic en cualquier palabra para ver
-Su significado y traducción
-
-Coro:
-LyricLearn hace el aprendizaje divertido
-Combina música con educación
-Cada canción es una oportunidad
-Para expandir tu vocabulario
-
-Verso 2:
-Las palabras están a un clic de distancia
-Aprende mientras disfrutas tu playlist
-Esta es la manera moderna
-De dominar un nuevo idioma`;
-
-    return mockLyrics;
+// ===== LYRICS FETCHING (LRCLIB API - FREE) =====
+async function fetchLyrics(trackName, artistName, duration) {
+    try {
+        // LRCLIB API - Free, no API key needed
+        const url = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artistName)}&track_name=${encodeURIComponent(trackName)}&duration=${Math.round(duration / 1000)}`;
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error('Lyrics not found');
+        }
+        
+        const data = await response.json();
+        
+        // Return plain lyrics (unsynced for now, synced later)
+        return {
+            plain: data.plainLyrics || data.syncedLyrics?.replace(/\[\d+:\d+\.\d+\]/g, '').trim() || null,
+            synced: data.syncedLyrics || null
+        };
+    } catch (error) {
+        console.error('Error fetching lyrics:', error);
+        return null;
+    }
 }
 
-// ===== TRANSLATION API (Mock for MVP) =====
-// Note: In production, use Google Translate API or similar
-async function translateWord(word, targetLang) {
-    // Mock translations
-    const translations = {
-        'es': {
-            'learning': 'aprendizaje',
-            'music': 'música',
-            'word': 'palabra',
-            'song': 'canción',
-            'fun': 'divertido',
-            'example': 'ejemplo',
-            'application': 'aplicación',
-            'help': 'ayuda',
-            'new': 'nuevo',
-            'listen': 'escuchar'
-        },
-        'en': {
-            'aprendizaje': 'learning',
-            'música': 'music',
-            'palabra': 'word',
-            'canción': 'song',
-            'divertido': 'fun',
-            'ejemplo': 'example',
-            'aplicación': 'application',
-            'ayuda': 'help',
-            'nuevo': 'new',
-            'escuchar': 'listen'
-        }
-    };
+// ===== TRANSLATION API (Google Translate - Free Public Endpoint) =====
+async function translateText(text, targetLang) {
+    if (targetLang === 'en') {
+        return text; // No translation needed for English
+    }
     
-    const lowerWord = word.toLowerCase();
-    return translations[targetLang]?.[lowerWord] || `[Traducción de "${word}" a ${targetLang}]`;
+    try {
+        // Using free Google Translate endpoint
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        // Parse response - Google returns nested arrays
+        if (data && data[0] && data[0][0] && data[0][0][0]) {
+            return data[0][0][0];
+        }
+        
+        return text; // Fallback to original if translation fails
+    } catch (error) {
+        console.error('Translation error:', error);
+        return text;
+    }
+}
+
+async function translateLyrics(lyrics, targetLang) {
+    if (targetLang === 'en' || !lyrics) {
+        return lyrics;
+    }
+    
+    // Split into lines for better translation
+    const lines = lyrics.split('\n');
+    const translatedLines = [];
+    
+    // Translate in batches to avoid rate limiting
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim()) {
+            const translated = await translateText(lines[i], targetLang);
+            translatedLines.push(translated);
+            
+            // Small delay to avoid rate limiting
+            if (i % 5 === 0 && i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        } else {
+            translatedLines.push(''); // Keep empty lines
+        }
+    }
+    
+    return translatedLines.join('\n');
 }
 
 // ===== UI DISPLAY FUNCTIONS =====
@@ -200,7 +213,7 @@ function displayTracks(tracks) {
     const container = document.getElementById('topTracks');
     
     container.innerHTML = tracks.map((track, index) => `
-        <div class="track-card" onclick="selectTrack('${track.id}', '${escapeHtml(track.name)}', '${escapeHtml(track.artists[0].name)}')">
+        <div class="track-card" onclick="selectTrack('${track.id}', '${escapeHtml(track.name)}', '${escapeHtml(track.artists[0].name)}', ${track.duration_ms})">
             <div class="track-number">${index + 1}</div>
             <div class="track-info">
                 <div class="track-name">${escapeHtml(track.name)}</div>
@@ -210,9 +223,9 @@ function displayTracks(tracks) {
     `).join('');
 }
 
-async function selectTrack(trackId, trackName, artistName) {
+async function selectTrack(trackId, trackName, artistName, duration) {
     // Update current track
-    currentTrack = { id: trackId, name: trackName, artist: artistName };
+    currentTrack = { id: trackId, name: trackName, artist: artistName, duration: duration };
     
     // Track this song as explored
     songsExplored.add(trackId);
@@ -229,28 +242,85 @@ async function selectTrack(trackId, trackName, artistName) {
     // Fetch and display lyrics
     showLoading();
     try {
-        const lyrics = await fetchLyrics(trackName, artistName);
-        displayLyrics(lyrics);
+        const lyricsData = await fetchLyrics(trackName, artistName, duration);
+        
+        if (!lyricsData || !lyricsData.plain) {
+            document.getElementById('lyricsContainer').innerHTML = 
+                '<p class="lyrics-placeholder">❌ Lyrics not available for this song. Try another one!</p>';
+            return;
+        }
+        
+        // Store original English lyrics
+        currentTrack.originalLyrics = lyricsData.plain;
+        currentTrack.translatedLyrics = null;
+        
+        // Display original lyrics
+        displayLyrics(lyricsData.plain, null);
+        
     } catch (error) {
         document.getElementById('lyricsContainer').innerHTML = 
-            '<p class="lyrics-placeholder">❌ No se pudieron cargar las letras. Intenta con otra canción.</p>';
+            '<p class="lyrics-placeholder">❌ Could not load lyrics. Try another song.</p>';
     }
 }
 
-function displayLyrics(lyrics) {
+function displayLyrics(originalLyrics, translatedLyrics) {
     const container = document.getElementById('lyricsContainer');
     
-    // Split into words and make them clickable
-    const words = lyrics.split(/\b/);
-    const clickableWords = words.map(word => {
-        // Only make actual words clickable (not spaces or punctuation)
-        if (/\w{2,}/.test(word)) {
-            return `<span class="word" onclick="showDefinition('${escapeHtml(word)}')">${escapeHtml(word)}</span>`;
-        }
-        return escapeHtml(word);
-    }).join('');
-    
-    container.innerHTML = `<div class="lyrics-text">${clickableWords}</div>`;
+    // If we have translation, show side-by-side
+    if (translatedLyrics) {
+        const originalLines = originalLyrics.split('\n');
+        const translatedLines = translatedLyrics.split('\n');
+        
+        let html = '<div class="lyrics-dual">';
+        html += '<div class="lyrics-column"><h4>Original (English)</h4>';
+        
+        originalLines.forEach((line, index) => {
+            if (line.trim()) {
+                const words = line.split(/\b/);
+                const clickableWords = words.map(word => {
+                    if (/\w{2,}/.test(word)) {
+                        return `<span class="word" onclick="showDefinition('${escapeHtml(word)}')">${escapeHtml(word)}</span>`;
+                    }
+                    return escapeHtml(word);
+                }).join('');
+                html += `<p>${clickableWords}</p>`;
+            } else {
+                html += '<p>&nbsp;</p>';
+            }
+        });
+        
+        html += '</div><div class="lyrics-column lyrics-translation"><h4>Translation</h4>';
+        
+        translatedLines.forEach(line => {
+            html += `<p>${escapeHtml(line) || '&nbsp;'}</p>`;
+        });
+        
+        html += '</div></div>';
+        container.innerHTML = html;
+        
+    } else {
+        // Show only original with clickable words
+        const lines = originalLyrics.split('\n');
+        let html = '<div class="lyrics-text">';
+        
+        lines.forEach(line => {
+            if (line.trim()) {
+                const words = line.split(/\b/);
+                const clickableWords = words.map(word => {
+                    if (/\w{2,}/.test(word)) {
+                        return `<span class="word" onclick="showDefinition('${escapeHtml(word)}')">${escapeHtml(word)}</span>`;
+                    }
+                    return escapeHtml(word);
+                }).join('');
+                html += `<p>${clickableWords}</p>`;
+            } else {
+                html += '<p>&nbsp;</p>';
+            }
+        });
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
 }
 
 async function showDefinition(word) {
@@ -259,35 +329,46 @@ async function showDefinition(word) {
     const definitionElement = document.getElementById('definitionText');
     
     wordElement.textContent = word;
-    definitionElement.textContent = 'Traduciendo...';
+    definitionElement.textContent = 'Translating...';
     
     popup.classList.add('active');
     
-    // Fetch translation
+    // Translate word to selected language
     try {
-        const translation = await translateWord(word, selectedLanguage);
+        const translation = await translateText(word, selectedLanguage);
         definitionElement.textContent = translation;
     } catch (error) {
-        definitionElement.textContent = 'Error al traducir. Intenta de nuevo.';
+        definitionElement.textContent = 'Error translating. Try again.';
     }
 }
 
-function closeDefinition() {
-    document.getElementById('definitionPopup').classList.remove('active');
-}
-
-function saveWord() {
-    const word = document.getElementById('definitionWord').textContent;
-    wordsLearned.add(word);
-    saveProgress();
-    
-    // Show feedback
-    alert(`✅ Palabra "${word}" guardada!`);
-    closeDefinition();
-}
-
-function changeLanguage() {
+async function changeLanguage() {
     selectedLanguage = document.getElementById('languageSelect').value;
+    
+    // If "Coming Soon" language selected, show alert
+    if (['fr', 'de', 'it', 'pt'].includes(selectedLanguage)) {
+        alert('⏳ This language is coming soon! For now, only English and Spanish are available.');
+        document.getElementById('languageSelect').value = 'es';
+        selectedLanguage = 'es';
+        return;
+    }
+    
+    // If we have original lyrics and not English, translate
+    if (currentTrack && currentTrack.originalLyrics && selectedLanguage !== 'en') {
+        showLoading();
+        
+        try {
+            const translated = await translateLyrics(currentTrack.originalLyrics, selectedLanguage);
+            currentTrack.translatedLyrics = translated;
+            displayLyrics(currentTrack.originalLyrics, translated);
+        } catch (error) {
+            alert('Translation failed. Showing original lyrics only.');
+            displayLyrics(currentTrack.originalLyrics, null);
+        }
+    } else if (currentTrack && currentTrack.originalLyrics) {
+        // Show only English
+        displayLyrics(currentTrack.originalLyrics, null);
+    }
 }
 
 function backToTracks() {
