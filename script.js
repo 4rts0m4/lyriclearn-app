@@ -1,6 +1,5 @@
 // ===== CONFIGURATION =====
-// IMPORTANT: Replace with your actual Spotify Client ID
-const CLIENT_ID = 'YOUR_CLIENT_ID_HERE'; // Get from developer.spotify.com
+const CLIENT_ID = '028b8be0a7eb40aeba632eecd0bf6e97'; // Get from developer.spotify.com
 const REDIRECT_URI = window.location.origin + window.location.pathname; // Auto-detect current URL
 const SCOPES = 'user-top-read user-read-currently-playing user-read-playback-state';
 
