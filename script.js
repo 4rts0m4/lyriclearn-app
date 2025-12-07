@@ -1,15 +1,15 @@
-// Configuración de Spotify
+// config de la app de Spotify
 const CLIENT_ID = '028b8be0a7eb40aeba632eecd0bf6e97';
 const REDIRECT_URI = window.location.origin + window.location.pathname;
 const SCOPES = 'user-top-read';
 
-// Variables globales
+// variables globales
 let accessToken = null;
 let cancionActual = null;
 let letraOriginal = '';
 let cancionesVistas = new Set();
 
-// Cargar progreso guardado
+// cargar el progreso guardado en localStorage
 function cargarProgreso() {
     const guardado = localStorage.getItem('lyriclearn_data');
     if (guardado) {
@@ -19,7 +19,7 @@ function cargarProgreso() {
     }
 }
 
-// Guardar progreso
+// guardar en localStorage
 function guardarProgreso() {
     localStorage.setItem('lyriclearn_data', JSON.stringify({
         canciones: Array.from(cancionesVistas)
@@ -27,19 +27,19 @@ function guardarProgreso() {
     actualizarProgreso();
 }
 
-// Actualizar contador de canciones
+// actualizar el numero de canciones vistas
 function actualizarProgreso() {
     document.getElementById('songsExplored').textContent = cancionesVistas.size;
 }
 
-// Generar código aleatorio para autenticación
+// generar codigo random para el PKCE flow
 function generarCodigo(largo) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     const valores = crypto.getRandomValues(new Uint8Array(largo));
     return valores.reduce((acc, x) => acc + chars[x % chars.length], "");
 }
 
-// Crear hash del código
+// hash SHA-256 del code verifier
 async function crearHash(codigo) {
     const datos = new TextEncoder().encode(codigo);
     const hash = await crypto.subtle.digest('SHA-256', datos);
@@ -47,7 +47,7 @@ async function crearHash(codigo) {
         .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
 
-// Iniciar sesión con Spotify
+// redirect a Spotify para login
 async function login() {
     const verificador = generarCodigo(64);
     const desafio = await crearHash(verificador);
@@ -59,7 +59,7 @@ async function login() {
     window.location.href = url;
 }
 
-// Obtener token de acceso
+// exchange el code por access token
 async function obtenerToken(codigo) {
     const verificador = localStorage.getItem('code_verifier');
     
@@ -78,7 +78,7 @@ async function obtenerToken(codigo) {
     return respuesta.json();
 }
 
-// Obtener canciones favoritas del usuario
+// traer top tracks del usuario
 async function obtenerCanciones(token) {
     const respuesta = await fetch('https://api.spotify.com/v1/me/top/tracks?limit=5&time_range=medium_term', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -88,7 +88,7 @@ async function obtenerCanciones(token) {
     return respuesta.json();
 }
 
-// Obtener letra - usando Lyrics.ovh que funcionaba antes
+// traer la letra usando lyrics.ovh
 async function obtenerLetra(cancion, artista) {
     try {
         const respuesta = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artista)}/${encodeURIComponent(cancion)}`);
@@ -105,12 +105,13 @@ async function obtenerLetra(cancion, artista) {
     }
 }
 
-// Traducir texto completo
+// traducir en bloques para no saturar la API
 async function traducirTexto(texto, idiomaDestino) {
     try {
         const lineas = texto.split('\n');
         const traducidas = [];
         
+        // traducir de a 10 lineas
         for (let i = 0; i < lineas.length; i += 10) {
             const bloque = lineas.slice(i, i + 10).join('\n');
             if (!bloque.trim()) {
@@ -127,6 +128,7 @@ async function traducirTexto(texto, idiomaDestino) {
                 traducidas.push(bloque);
             }
             
+            // delay para no hacer spam a la API
             await new Promise(resolve => setTimeout(resolve, 300));
         }
         
@@ -136,7 +138,7 @@ async function traducirTexto(texto, idiomaDestino) {
     }
 }
 
-// Mostrar canciones en la pantalla
+// renderizar las cards de canciones
 function mostrarCanciones(canciones) {
     const contenedor = document.getElementById('topTracks');
     
@@ -158,7 +160,7 @@ function mostrarCanciones(canciones) {
     }).join('');
 }
 
-// Seleccionar canción desde el elemento
+// wrapper para pasar los datos desde el onclick del elemento
 async function seleccionarCancionPorElemento(elemento) {
     const id = elemento.dataset.trackId;
     const uri = elemento.dataset.trackUri;
@@ -168,7 +170,7 @@ async function seleccionarCancionPorElemento(elemento) {
     await seleccionarCancion(id, uri, nombre, artista);
 }
 
-// Seleccionar una canción
+// cuando el usuario hace click en una cancion
 async function seleccionarCancion(id, uri, nombre, artista) {
     cancionActual = { id, uri, nombre, artista };
     cancionesVistas.add(id);
@@ -179,6 +181,7 @@ async function seleccionarCancion(id, uri, nombre, artista) {
     
     mostrarReproductor(uri);
     
+    // cambiar de vista
     document.getElementById('tracksSection').style.display = 'none';
     document.getElementById('lyricsSection').style.display = 'block';
     
@@ -191,13 +194,13 @@ async function seleccionarCancion(id, uri, nombre, artista) {
     } catch (error) {
         console.error('Error cargando letra:', error);
         document.getElementById('lyricsOriginal').innerHTML = 
-            '<p class="lyrics-placeholder">❌ No se pudo cargar la letra. Intenta con otra canción.</p>';
+            '<p class="lyrics-placeholder">❌ No se pudo cargar la letra. Intenta con otra cancion.</p>';
         document.getElementById('lyricsTranslated').innerHTML = 
-            '<p class="lyrics-placeholder">❌ No se pudo cargar la traducción.</p>';
+            '<p class="lyrics-placeholder">❌ No se pudo cargar la traduccion.</p>';
     }
 }
 
-// Mostrar reproductor de Spotify
+// meter el iframe de Spotify
 function mostrarReproductor(uri) {
     const contenedor = document.getElementById('spotifyPlayer');
     const trackId = uri.split(':')[2];
@@ -216,15 +219,15 @@ function mostrarReproductor(uri) {
     `;
 }
 
-// Mostrar letra comparativa
+// mostrar letra original y traducida lado a lado
 async function mostrarLetraComparativa(letra) {
     const idiomaSeleccionado = document.getElementById('languageSelect').value;
     
-    // Mostrar letra original simple (sin palabras clickeables)
+    // lado izquierdo - letra original
     const contenedorOriginal = document.getElementById('lyricsOriginal');
     contenedorOriginal.innerHTML = `<div class="lyrics-text">${escapar(letra)}</div>`;
     
-    // Mostrar traducción
+    // lado derecho - traduccion
     document.getElementById('lyricsTranslated').innerHTML = 
         '<p class="lyrics-placeholder">⏳ Traduciendo letra...</p>';
     
@@ -238,7 +241,7 @@ async function mostrarLetraComparativa(letra) {
     }
 }
 
-// Cambiar idioma de traducción
+// cuando cambia el idioma del select
 async function changeLanguage() {
     if (letraOriginal) {
         document.getElementById('lyricsTranslated').innerHTML = 
@@ -258,7 +261,7 @@ function backToTracks() {
     document.getElementById('spotifyPlayer').innerHTML = '';
 }
 
-// Escapar HTML para evitar XSS
+// sanitizar texto para prevenir XSS
 function escapar(texto) {
     const div = document.createElement('div');
     div.textContent = texto;
@@ -269,10 +272,10 @@ function mostrarCargando() {
     document.getElementById('lyricsOriginal').innerHTML = 
         '<p class="lyrics-placeholder">⏳ Cargando letra...</p>';
     document.getElementById('lyricsTranslated').innerHTML = 
-        '<p class="lyrics-placeholder">⏳ Preparando traducción...</p>';
+        '<p class="lyrics-placeholder">⏳ Preparando traduccion...</p>';
 }
 
-// Inicializar aplicación
+// entry point
 async function init() {
     cargarProgreso();
     
@@ -280,6 +283,7 @@ async function init() {
     const codigo = params.get('code');
     
     if (codigo) {
+        // limpiar la URL
         window.history.replaceState({}, document.title, window.location.pathname);
         
         document.getElementById('authSection').style.display = 'none';
