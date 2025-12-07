@@ -105,36 +105,54 @@ async function obtenerLetra(cancion, artista) {
     }
 }
 
-// traducir en bloques para no saturar la API
+// DeepL API config
+// fui demasiado atras con el rollback, ya tenia implementada esta API
+// no es imperativo ocultarla pues es una key gratuita con limites bajos
+const DEEPL_API_KEY = 'c2aab72a-97a7-4abc-8199-d5b80e0e8c3c:fx';
+
+// traducir usando DeepL
 async function traducirTexto(texto, idiomaDestino) {
     try {
-        const lineas = texto.split('\n');
-        const traducidas = [];
+        // DeepL usa codigos de idioma especificos
+        const codigosDeepL = {
+            'es': 'ES',
+            'fr': 'FR',
+            'de': 'DE',
+            'pt': 'PT-BR'
+        };
         
-        // traducir de a 10 lineas
-        for (let i = 0; i < lineas.length; i += 10) {
-            const bloque = lineas.slice(i, i + 10).join('\n');
-            if (!bloque.trim()) {
-                traducidas.push('');
-                continue;
-            }
-            
-            const respuesta = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(bloque)}&langpair=en|${idiomaDestino}`);
-            const datos = await respuesta.json();
-            
-            if (datos.responseStatus === 200) {
-                traducidas.push(datos.responseData.translatedText);
-            } else {
-                traducidas.push(bloque);
-            }
-            
-            // delay para no hacer spam a la API
-            await new Promise(resolve => setTimeout(resolve, 300));
+        const targetLang = codigosDeepL[idiomaDestino] || 'ES';
+        
+        const respuesta = await fetch('https://api-free.deepl.com/v2/translate', {
+            method: 'POST',
+            headers: {
+                'Authorization': `DeepL-Auth-Key ${DEEPL_API_KEY}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                'text': texto,
+                'target_lang': targetLang,
+                'source_lang': 'EN'
+            })
+        });
+        
+        if (!respuesta.ok) {
+            throw new Error(`DeepL API error: ${respuesta.status}`);
         }
         
-        return traducidas.join('\n');
+        const datos = await respuesta.json();
+        
+        if (datos.translations && datos.translations[0]) {
+            console.log('Traducido con DeepL ✓');
+            return datos.translations[0].text;
+        }
+        
+        throw new Error('No translation received');
+        
     } catch (error) {
-        return texto;
+        console.error('Error traduciendo con DeepL:', error);
+        // si falla DeepL, mostrar mensaje
+        return '[Error al traducir - intenta de nuevo]';
     }
 }
 
