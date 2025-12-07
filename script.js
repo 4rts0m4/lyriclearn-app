@@ -123,17 +123,16 @@ async function traducirTexto(texto, idiomaDestino) {
         
         const targetLang = codigosDeepL[idiomaDestino] || 'ES';
         
+        // construir el request body con auth_key incluido
+        const formData = new URLSearchParams();
+        formData.append('auth_key', DEEPL_API_KEY);
+        formData.append('text', texto);
+        formData.append('target_lang', targetLang);
+        formData.append('source_lang', 'EN');
+        
         const respuesta = await fetch('https://api-free.deepl.com/v2/translate', {
             method: 'POST',
-            headers: {
-                'Authorization': `DeepL-Auth-Key ${DEEPL_API_KEY}`,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                'text': texto,
-                'target_lang': targetLang,
-                'source_lang': 'EN'
-            })
+            body: formData
         });
         
         if (!respuesta.ok) {
