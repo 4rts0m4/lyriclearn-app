@@ -3,190 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LyricLearn - Aprende idiomas con musica</title>
-    
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    
-    <!-- Custom CSS -->
+    <title>LyricLearn - Aprende idiomas con música</title>
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="bg-gradient">
-    <!-- Contenedor principal con Alpine.js -->
-    <div class="container py-5" x-data="lyricLearnApp()" x-init="init()">
-        
-        <!-- Header -->
-        <header class="text-center mb-5 pb-4 border-bottom">
-            <h1 class="display-4 fw-bold text-spotify mb-2">🎵 LyricLearn</h1>
-            <p class="lead text-muted">Aprende vocabulario con tus canciones favoritas</p>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 LyricLearn</h1>
+            <p class="subtitle">Aprende vocabulario con tus canciones favoritas</p>
         </header>
 
-        <!-- Seccion de Autenticacion -->
-        <div x-show="!isAuthenticated && !loading" class="text-center py-5">
-            <p class="fs-5 text-muted mb-4">Conecta tu cuenta de Spotify para comenzar</p>
-            <button @click="login()" class="btn btn-spotify btn-lg px-5 py-3">
-                <i class="bi bi-spotify me-2"></i>
+        <!-- Pantalla de login -->
+        <div class="auth-section" id="authSection">
+            <p class="description">Conecta tu cuenta de Spotify para comenzar</p>
+            <button class="btn-primary" onclick="login()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                </svg>
                 Conectar con Spotify
             </button>
         </div>
 
-        <!-- Estado de Carga -->
-        <div x-show="loading" class="text-center py-5">
-            <div class="spinner-border text-spotify mb-3" role="status" style="width: 3rem; height: 3rem;">
-                <span class="visually-hidden">Cargando...</span>
-            </div>
-            <p class="text-muted">Cargando tus canciones...</p>
+        <!-- Cargando -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Cargando tus canciones...</p>
         </div>
 
-        <!-- Seccion de Top Canciones -->
-        <div x-show="isAuthenticated && !selectedTrack" x-cloak>
-            <h2 class="h3 mb-4">🎧 Tus Top 5 Canciones</h2>
-            <div class="list-group">
-                <template x-for="(track, index) in tracks" :key="track.id">
-                    <a href="#" @click.prevent="selectTrack(track)" 
-                       class="list-group-item list-group-item-action d-flex align-items-center p-3 track-card">
-                        <div class="track-number me-3" x-text="index + 1"></div>
-                        <div class="flex-grow-1">
-                            <h5 class="mb-1" x-text="track.name"></h5>
-                            <p class="mb-0 text-muted small" x-text="track.artists.map(a => a.name).join(', ')"></p>
-                        </div>
-                    </a>
-                </template>
-            </div>
+        <!-- Contenido principal -->
+        <div class="content" id="content">
+            <!-- Lista de canciones -->
+            <section class="tracks-section" id="tracksSection">
+                <h2>🎧 Tus Top 5 Canciones</h2>
+                <div id="topTracks" class="tracks-grid"></div>
+            </section>
 
-            <!-- Seccion de Progreso -->
-            <div class="row g-3 mt-4">
-                <div class="col-md-6">
-                    <div class="card text-center h-100">
-                        <div class="card-body">
-                            <h3 class="display-4 text-spotify mb-2" x-text="wordsLearned.size"></h3>
-                            <p class="text-muted mb-0">Palabras buscadas</p>
-                        </div>
+            <!-- Pantalla de letra -->
+            <section class="lyrics-section" id="lyricsSection">
+                <div class="lyrics-header">
+                    <button class="btn-back" onclick="backToTracks()">← Volver</button>
+                    <div class="song-info">
+                        <h3 id="currentSong">Nombre de la canción</h3>
+                        <p id="currentArtist">Artista</p>
                     </div>
                 </div>
-                <div class="col-md-6">
-                    <div class="card text-center h-100">
-                        <div class="card-body">
-                            <h3 class="display-4 text-spotify mb-2" x-text="songsExplored.size"></h3>
-                            <p class="text-muted mb-0">Canciones exploradas</p>
-                        </div>
-                    </div>
+                
+                <!-- Reproductor de Spotify -->
+                <div class="spotify-player-container">
+                    <div id="spotifyPlayer"></div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Seccion de Letras -->
-        <div x-show="selectedTrack" x-cloak>
-            <!-- Header de cancion -->
-            <div class="d-flex align-items-center mb-4 pb-3 border-bottom">
-                <button @click="backToTracks()" class="btn btn-outline-secondary me-3">
-                    <i class="bi bi-arrow-left"></i> Volver
-                </button>
-                <div>
-                    <h3 class="mb-1" x-text="selectedTrack?.name"></h3>
-                    <p class="text-muted mb-0" x-text="selectedTrack?.artist"></p>
+                <div class="language-selector">
+                    <label>Traducir a:</label>
+                    <select id="languageSelect" onchange="changeLanguage()">
+                        <option value="es">🇪🇸 Español</option>
+                        <option value="fr">🇫🇷 Francés</option>
+                        <option value="de">🇩🇪 Alemán</option>
+                        <option value="pt">🇵🇹 Portugués</option>
+                    </select>
                 </div>
-            </div>
 
-            <!-- Selector de idioma -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-auto">
-                            <label class="fw-bold">Traducir a:</label>
-                        </div>
-                        <div class="col-auto">
-                            <select x-model="selectedLanguage" @change="changeLanguage()" class="form-select">
-                                <option value="en">English (Original)</option>
-                                <option value="es">Español</option>
-                                <option value="fr" disabled>Français (Proximamente)</option>
-                                <option value="de" disabled>Deutsch (Proximamente)</option>
-                                <option value="it" disabled>Italiano (Proximamente)</option>
-                                <option value="pt" disabled>Português (Proximamente)</option>
-                            </select>
-                        </div>
+                <!-- Vista comparativa de letras -->
+                <div class="lyrics-comparison">
+                    <div class="lyrics-headers">
+                        <h4 class="column-title">Original (Inglés)</h4>
+                        <h4 class="column-title">Traducción</h4>
                     </div>
-                </div>
-            </div>
-
-            <!-- Contenedor de letras -->
-            <div class="lyrics-container card">
-                <div class="card-body p-4">
-                    <!-- Loading state -->
-                    <div x-show="lyricsLoading" class="text-center py-5">
-                        <div class="spinner-border text-spotify mb-3" role="status"></div>
-                        <p class="text-muted">Cargando letras...</p>
-                    </div>
-
-                    <!-- Error state -->
-                    <div x-show="!currentLyrics && !lyricsLoading" class="text-center py-5">
-                        <p class="text-muted">❌ Letras no disponibles para esta cancion. Prueba otra!</p>
-                    </div>
-
-                    <!-- Letras (una columna o dos columnas) -->
-                    <div x-show="currentLyrics && !lyricsLoading" 
-                         :class="translatedLyrics ? 'row' : ''">
-                        
-                        <!-- Columna original -->
-                        <div :class="translatedLyrics ? 'col-md-6 border-end' : 'col-12'">
-                            <h4 x-show="translatedLyrics" class="text-spotify mb-3 sticky-top bg-white py-2">
-                                Original (English)
-                            </h4>
-                            <div class="lyrics-text">
-                                <template x-for="(line, i) in currentLyrics?.split('\n')" :key="i">
-                                    <p x-html="makeWordsClickable(line)"></p>
-                                </template>
+                    <div class="lyrics-scroll-container">
+                        <div class="lyrics-columns">
+                            <div class="lyrics-content" id="lyricsOriginal">
+                                <p class="lyrics-placeholder">Selecciona una canción...</p>
                             </div>
-                        </div>
-
-                        <!-- Columna traduccion -->
-                        <div x-show="translatedLyrics" class="col-md-6">
-                            <h4 class="text-spotify mb-3 sticky-top bg-white py-2">Traduccion</h4>
-                            <div class="lyrics-text text-muted">
-                                <template x-for="(line, i) in translatedLyrics?.split('\n')" :key="i">
-                                    <p x-text="line || ' '"></p>
-                                </template>
+                            <div class="lyrics-content" id="lyricsTranslated">
+                                <p class="lyrics-placeholder">La traducción aparecerá aquí...</p>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+            </section>
 
-        <!-- Modal de Definicion -->
-        <div x-show="showDefinitionModal" 
-             @click.self="showDefinitionModal = false"
-             class="modal fade show d-block" 
-             tabindex="-1" 
-             style="background: rgba(0,0,0,0.5);"
-             x-cloak>
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title text-spotify" x-text="selectedWord"></h5>
-                        <button type="button" class="btn-close" @click="showDefinitionModal = false"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p class="fs-5" x-text="wordDefinition"></p>
-                    </div>
-                    <div class="modal-footer">
-                        <button @click="saveWord()" class="btn btn-spotify">
-                            <i class="bi bi-bookmark-fill me-2"></i>
-                            Guardar palabra
-                        </button>
+            <!-- Progreso -->
+            <section class="progress-section" id="progressSection">
+                <h3>📊 Tu Progreso</h3>
+                <div class="progress-stats">
+                    <div class="stat-card">
+                        <span class="stat-number" id="songsExplored">0</span>
+                        <span class="stat-label">Canciones exploradas</span>
                     </div>
                 </div>
-            </div>
+            </section>
         </div>
     </div>
 
-    <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
-    
-    <!-- Custom JS -->
     <script src="script.js"></script>
 </body>
 </html>

@@ -1,288 +1,310 @@
-// ===== CONFIGURACION =====
-const CLIENT_ID = '028b8be0a7eb40aeba632eecd0bf6e97'; // Profesor, para recrear, debe reemplazar con su Client ID
+// Configuración de Spotify
+const CLIENT_ID = '028b8be0a7eb40aeba632eecd0bf6e97';
 const REDIRECT_URI = window.location.origin + window.location.pathname;
-const SCOPES = 'user-top-read user-read-currently-playing user-read-playback-state';
+const SCOPES = 'user-top-read';
 
-// ===== COMPONENTE PRINCIPAL ALPINE.JS =====
-function lyricLearnApp() {
-    return {
-        // Estado de autenticacion
-        isAuthenticated: false,
-        accessToken: null,
-        loading: false,
-        
-        // Datos de canciones
-        tracks: [],
-        selectedTrack: null,
-        
-        // Letras
-        currentLyrics: null,
-        translatedLyrics: null,
-        lyricsLoading: false,
-        selectedLanguage: 'en',
-        
-        // Modal de definicion
-        showDefinitionModal: false,
-        selectedWord: '',
-        wordDefinition: '',
-        
-        // Progreso del usuario
-        wordsLearned: new Set(),
-        songsExplored: new Set(),
+// Variables globales
+let accessToken = null;
+let cancionActual = null;
+let letraOriginal = '';
+let cancionesVistas = new Set();
 
-        // ===== INICIALIZACION =====
-        async init() {
-            this.loadProgress();
-            
-            const code = this.getAuthCode();
-            if (code) {
-                window.history.replaceState({}, document.title, window.location.pathname);
-                await this.handleAuth(code);
-            }
-        },
-
-        // ===== AUTENTICACION SPOTIFY (PKCE) =====
-        async login() {
-            const verifier = this.generateRandomString(128);
-            localStorage.setItem('code_verifier', verifier);
-            
-            const hashed = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-            const challenge = btoa(String.fromCharCode(...new Uint8Array(hashed)))
-                .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-            
-            const url = `https://accounts.spotify.com/authorize?` +
-                `client_id=${CLIENT_ID}&` +
-                `response_type=code&` +
-                `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
-                `scope=${encodeURIComponent(SCOPES)}&` +
-                `code_challenge_method=S256&` +
-                `code_challenge=${challenge}`;
-            
-            window.location.href = url;
-        },
-
-        getAuthCode() {
-            return new URLSearchParams(window.location.search).get('code');
-        },
-
-        async handleAuth(code) {
-            this.loading = true;
-            
-            try {
-                // Obtener access token
-                const verifier = localStorage.getItem('code_verifier');
-                const response = await fetch('https://accounts.spotify.com/api/token', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({
-                        client_id: CLIENT_ID,
-                        grant_type: 'authorization_code',
-                        code: code,
-                        redirect_uri: REDIRECT_URI,
-                        code_verifier: verifier,
-                    })
-                });
-                
-                const data = await response.json();
-                this.accessToken = data.access_token;
-                localStorage.removeItem('code_verifier');
-                
-                // Obtener top canciones
-                await this.fetchTopTracks();
-                
-                this.isAuthenticated = true;
-            } catch (error) {
-                alert('Error al autenticar: ' + error.message);
-            } finally {
-                this.loading = false;
-            }
-        },
-
-        // ===== SPOTIFY API =====
-        async fetchTopTracks() {
-            const response = await fetch(
-                'https://api.spotify.com/v1/me/top/tracks?limit=5&time_range=medium_term',
-                { headers: { 'Authorization': `Bearer ${this.accessToken}` } }
-            );
-            
-            const data = await response.json();
-            this.tracks = data.items;
-        },
-
-        // ===== MANEJO DE CANCIONES =====
-        async selectTrack(track) {
-            this.selectedTrack = {
-                id: track.id,
-                name: track.name,
-                artist: track.artists[0].name,
-                duration: track.duration_ms
-            };
-            
-            this.songsExplored.add(track.id);
-            this.saveProgress();
-            
-            // Obtener letras
-            this.lyricsLoading = true;
-            this.currentLyrics = null;
-            this.translatedLyrics = null;
-            
-            try {
-                const lyrics = await this.fetchLyrics(track.name, track.artists[0].name, track.duration_ms);
-                if (lyrics?.plain) {
-                    this.currentLyrics = lyrics.plain;
-                }
-            } catch (error) {
-                console.error('Error al obtener letras:', error);
-            } finally {
-                this.lyricsLoading = false;
-            }
-        },
-
-        backToTracks() {
-            this.selectedTrack = null;
-            this.currentLyrics = null;
-            this.translatedLyrics = null;
-            this.selectedLanguage = 'en';
-        },
-
-        // ===== API DE LETRAS (LRCLIB) =====
-        async fetchLyrics(trackName, artistName, duration) {
-            const url = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artistName)}&track_name=${encodeURIComponent(trackName)}&duration=${Math.round(duration / 1000)}`;
-            
-            const response = await fetch(url);
-            if (!response.ok) return null;
-            
-            const data = await response.json();
-            return {
-                plain: data.plainLyrics || data.syncedLyrics?.replace(/\[\d+:\d+\.\d+\]/g, '').trim() || null,
-                synced: data.syncedLyrics || null
-            };
-        },
-
-        // ===== TRADUCCION =====
-        async changeLanguage() {
-            // Validar idiomas no disponibles
-            if (['fr', 'de', 'it', 'pt'].includes(this.selectedLanguage)) {
-                alert('⏳ Este idioma estara disponible proximamente!');
-                this.selectedLanguage = 'es';
-                return;
-            }
-
-            // Si es ingles, mostrar solo original
-            if (this.selectedLanguage === 'en') {
-                this.translatedLyrics = null;
-                return;
-            }
-
-            // Traducir letras
-            if (this.currentLyrics) {
-                this.lyricsLoading = true;
-                try {
-                    this.translatedLyrics = await this.translateLyrics(this.currentLyrics);
-                } catch (error) {
-                    alert('Error al traducir. Mostrando solo original.');
-                    this.translatedLyrics = null;
-                } finally {
-                    this.lyricsLoading = false;
-                }
-            }
-        },
-
-        async translateLyrics(lyrics) {
-            const lines = lyrics.split('\n');
-            const translated = [];
-            
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim()) {
-                    const result = await this.translateText(lines[i], this.selectedLanguage);
-                    translated.push(result);
-                    
-                    // Delay para evitar rate limiting
-                    if (i % 5 === 0 && i > 0) {
-                        await new Promise(r => setTimeout(r, 100));
-                    }
-                } else {
-                    translated.push('');
-                }
-            }
-            
-            return translated.join('\n');
-        },
-
-        async translateText(text, targetLang) {
-            if (targetLang === 'en') return text;
-            
-            try {
-                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                return data?.[0]?.[0]?.[0] || text;
-            } catch (error) {
-                return text;
-            }
-        },
-
-        // ===== PALABRAS CLICKEABLES =====
-        makeWordsClickable(line) {
-            if (!line.trim()) return '&nbsp;';
-            
-            // Dividir por limites de palabra pero mantener espacios
-            const parts = line.split(/(\b\w{2,}\b)/g);
-            
-            return parts.map(part => {
-                // Si es una palabra (2+ caracteres alfanumericos)
-                if (/^\w{2,}$/.test(part)) {
-                    return `<span class="word" @click="showDefinition('${this.escapeHtml(part)}')">${this.escapeHtml(part)}</span>`;
-                }
-                return this.escapeHtml(part);
-            }).join('');
-        },
-
-        // ===== DEFINICIONES =====
-        async showDefinition(word) {
-            this.selectedWord = word;
-            this.wordDefinition = 'Traduciendo...';
-            this.showDefinitionModal = true;
-            
-            this.wordDefinition = await this.translateText(word, this.selectedLanguage);
-        },
-
-        saveWord() {
-            this.wordsLearned.add(this.selectedWord);
-            this.saveProgress();
-            this.showDefinitionModal = false;
-            alert(`✅ Palabra "${this.selectedWord}" guardada!`);
-        },
-
-        // ===== PROGRESO =====
-        loadProgress() {
-            const saved = localStorage.getItem('lyriclearn_progress');
-            if (saved) {
-                const data = JSON.parse(saved);
-                this.wordsLearned = new Set(data.words || []);
-                this.songsExplored = new Set(data.songs || []);
-            }
-        },
-
-        saveProgress() {
-            localStorage.setItem('lyriclearn_progress', JSON.stringify({
-                words: Array.from(this.wordsLearned),
-                songs: Array.from(this.songsExplored)
-            }));
-        },
-
-        // ===== UTILIDADES =====
-        generateRandomString(length) {
-            const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-            const values = crypto.getRandomValues(new Uint8Array(length));
-            return values.reduce((acc, x) => acc + possible[x % possible.length], "");
-        },
-
-        escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+// Cargar progreso guardado
+function cargarProgreso() {
+    const guardado = localStorage.getItem('lyriclearn_data');
+    if (guardado) {
+        const datos = JSON.parse(guardado);
+        cancionesVistas = new Set(datos.canciones || []);
+        actualizarProgreso();
     }
 }
+
+// Guardar progreso
+function guardarProgreso() {
+    localStorage.setItem('lyriclearn_data', JSON.stringify({
+        canciones: Array.from(cancionesVistas)
+    }));
+    actualizarProgreso();
+}
+
+// Actualizar contador de canciones
+function actualizarProgreso() {
+    document.getElementById('songsExplored').textContent = cancionesVistas.size;
+}
+
+// Generar código aleatorio para autenticación
+function generarCodigo(largo) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const valores = crypto.getRandomValues(new Uint8Array(largo));
+    return valores.reduce((acc, x) => acc + chars[x % chars.length], "");
+}
+
+// Crear hash del código
+async function crearHash(codigo) {
+    const datos = new TextEncoder().encode(codigo);
+    const hash = await crypto.subtle.digest('SHA-256', datos);
+    return btoa(String.fromCharCode(...new Uint8Array(hash)))
+        .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+// Iniciar sesión con Spotify
+async function login() {
+    const verificador = generarCodigo(64);
+    const desafio = await crearHash(verificador);
+    
+    localStorage.setItem('code_verifier', verificador);
+    
+    const url = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&code_challenge_method=S256&code_challenge=${desafio}`;
+    
+    window.location.href = url;
+}
+
+// Obtener token de acceso
+async function obtenerToken(codigo) {
+    const verificador = localStorage.getItem('code_verifier');
+    
+    const respuesta = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            client_id: CLIENT_ID,
+            grant_type: 'authorization_code',
+            code: codigo,
+            redirect_uri: REDIRECT_URI,
+            code_verifier: verificador
+        })
+    });
+    
+    return respuesta.json();
+}
+
+// Obtener canciones favoritas del usuario
+async function obtenerCanciones(token) {
+    const respuesta = await fetch('https://api.spotify.com/v1/me/top/tracks?limit=5&time_range=medium_term', {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!respuesta.ok) throw new Error('Error al cargar canciones');
+    return respuesta.json();
+}
+
+// Obtener letra - usando Lyrics.ovh que funcionaba antes
+async function obtenerLetra(cancion, artista) {
+    try {
+        const respuesta = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artista)}/${encodeURIComponent(cancion)}`);
+        
+        if (!respuesta.ok) {
+            throw new Error('Letra no encontrada');
+        }
+        
+        const datos = await respuesta.json();
+        return datos.lyrics;
+    } catch (error) {
+        console.error('Error obteniendo letra:', error);
+        throw error;
+    }
+}
+
+// Traducir texto completo
+async function traducirTexto(texto, idiomaDestino) {
+    try {
+        const lineas = texto.split('\n');
+        const traducidas = [];
+        
+        for (let i = 0; i < lineas.length; i += 10) {
+            const bloque = lineas.slice(i, i + 10).join('\n');
+            if (!bloque.trim()) {
+                traducidas.push('');
+                continue;
+            }
+            
+            const respuesta = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(bloque)}&langpair=en|${idiomaDestino}`);
+            const datos = await respuesta.json();
+            
+            if (datos.responseStatus === 200) {
+                traducidas.push(datos.responseData.translatedText);
+            } else {
+                traducidas.push(bloque);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        
+        return traducidas.join('\n');
+    } catch (error) {
+        return texto;
+    }
+}
+
+// Mostrar canciones en la pantalla
+function mostrarCanciones(canciones) {
+    const contenedor = document.getElementById('topTracks');
+    
+    contenedor.innerHTML = canciones.map((cancion, i) => {
+        return `
+            <div class="track-card" 
+                 data-track-id="${cancion.id}" 
+                 data-track-uri="${cancion.uri}"
+                 data-track-name="${escapar(cancion.name)}" 
+                 data-artist-name="${escapar(cancion.artists[0].name)}"
+                 onclick="seleccionarCancionPorElemento(this)">
+                <div class="track-number">${i + 1}</div>
+                <div class="track-info">
+                    <div class="track-name">${escapar(cancion.name)}</div>
+                    <div class="track-artist">${cancion.artists.map(a => escapar(a.name)).join(', ')}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Seleccionar canción desde el elemento
+async function seleccionarCancionPorElemento(elemento) {
+    const id = elemento.dataset.trackId;
+    const uri = elemento.dataset.trackUri;
+    const nombre = elemento.dataset.trackName;
+    const artista = elemento.dataset.artistName;
+    
+    await seleccionarCancion(id, uri, nombre, artista);
+}
+
+// Seleccionar una canción
+async function seleccionarCancion(id, uri, nombre, artista) {
+    cancionActual = { id, uri, nombre, artista };
+    cancionesVistas.add(id);
+    guardarProgreso();
+    
+    document.getElementById('currentSong').textContent = nombre;
+    document.getElementById('currentArtist').textContent = artista;
+    
+    mostrarReproductor(uri);
+    
+    document.getElementById('tracksSection').style.display = 'none';
+    document.getElementById('lyricsSection').style.display = 'block';
+    
+    mostrarCargando();
+    
+    try {
+        const letra = await obtenerLetra(nombre, artista);
+        letraOriginal = letra;
+        await mostrarLetraComparativa(letra);
+    } catch (error) {
+        console.error('Error cargando letra:', error);
+        document.getElementById('lyricsOriginal').innerHTML = 
+            '<p class="lyrics-placeholder">❌ No se pudo cargar la letra. Intenta con otra canción.</p>';
+        document.getElementById('lyricsTranslated').innerHTML = 
+            '<p class="lyrics-placeholder">❌ No se pudo cargar la traducción.</p>';
+    }
+}
+
+// Mostrar reproductor de Spotify
+function mostrarReproductor(uri) {
+    const contenedor = document.getElementById('spotifyPlayer');
+    const trackId = uri.split(':')[2];
+    
+    contenedor.innerHTML = `
+        <iframe 
+            style="border-radius:12px" 
+            src="https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0" 
+            width="100%" 
+            height="152" 
+            frameBorder="0" 
+            allowfullscreen="" 
+            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+            loading="lazy">
+        </iframe>
+    `;
+}
+
+// Mostrar letra comparativa
+async function mostrarLetraComparativa(letra) {
+    const idiomaSeleccionado = document.getElementById('languageSelect').value;
+    
+    // Mostrar letra original simple (sin palabras clickeables)
+    const contenedorOriginal = document.getElementById('lyricsOriginal');
+    contenedorOriginal.innerHTML = `<div class="lyrics-text">${escapar(letra)}</div>`;
+    
+    // Mostrar traducción
+    document.getElementById('lyricsTranslated').innerHTML = 
+        '<p class="lyrics-placeholder">⏳ Traduciendo letra...</p>';
+    
+    try {
+        const letraTraducida = await traducirTexto(letra, idiomaSeleccionado);
+        const contenedorTraducido = document.getElementById('lyricsTranslated');
+        contenedorTraducido.innerHTML = `<div class="lyrics-text">${escapar(letraTraducida)}</div>`;
+    } catch (error) {
+        document.getElementById('lyricsTranslated').innerHTML = 
+            '<p class="lyrics-placeholder">❌ Error al traducir</p>';
+    }
+}
+
+// Cambiar idioma de traducción
+async function changeLanguage() {
+    if (letraOriginal) {
+        document.getElementById('lyricsTranslated').innerHTML = 
+            '<p class="lyrics-placeholder">⏳ Traduciendo...</p>';
+        
+        const idiomaSeleccionado = document.getElementById('languageSelect').value;
+        const letraTraducida = await traducirTexto(letraOriginal, idiomaSeleccionado);
+        const contenedorTraducido = document.getElementById('lyricsTranslated');
+        contenedorTraducido.innerHTML = `<div class="lyrics-text">${escapar(letraTraducida)}</div>`;
+    }
+}
+
+function backToTracks() {
+    document.getElementById('lyricsSection').style.display = 'none';
+    document.getElementById('tracksSection').style.display = 'block';
+    letraOriginal = '';
+    document.getElementById('spotifyPlayer').innerHTML = '';
+}
+
+// Escapar HTML para evitar XSS
+function escapar(texto) {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+}
+
+function mostrarCargando() {
+    document.getElementById('lyricsOriginal').innerHTML = 
+        '<p class="lyrics-placeholder">⏳ Cargando letra...</p>';
+    document.getElementById('lyricsTranslated').innerHTML = 
+        '<p class="lyrics-placeholder">⏳ Preparando traducción...</p>';
+}
+
+// Inicializar aplicación
+async function init() {
+    cargarProgreso();
+    
+    const params = new URLSearchParams(window.location.search);
+    const codigo = params.get('code');
+    
+    if (codigo) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        document.getElementById('authSection').style.display = 'none';
+        document.getElementById('loading').style.display = 'block';
+        
+        try {
+            const tokenData = await obtenerToken(codigo);
+            accessToken = tokenData.access_token;
+            
+            const datos = await obtenerCanciones(accessToken);
+            
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            
+            mostrarCanciones(datos.items);
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error al cargar canciones. Intenta de nuevo.');
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('authSection').style.display = 'block';
+        }
+    } else {
+        document.getElementById('authSection').style.display = 'block';
+    }
+}
+
+window.onload = init;
