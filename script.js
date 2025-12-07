@@ -107,8 +107,13 @@ async function obtenerLetra(cancion, artista) {
 
 // DeepL API config
 // fui demasiado atras con el rollback, ya tenia implementada esta API
-// no es imperativo ocultarla pues es una key gratuita con limites bajos
+// no es imperativo ocultarla pues es una key gratuita con limites bajos 
+// (aunque al parecer DeepL si que se toma en serio la seguridad incluso de las cuentas gratuitas)
 const DEEPL_API_KEY = 'c2aab72a-97a7-4abc-8199-d5b80e0e8c3c:fx';
+
+// CORS proxy
+// usando allorigins.win no seria lo mejor pero para este proyecto esta bien
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
 // traducir usando DeepL
 async function traducirTexto(texto, idiomaDestino) {
@@ -123,16 +128,19 @@ async function traducirTexto(texto, idiomaDestino) {
         
         const targetLang = codigosDeepL[idiomaDestino] || 'ES';
         
-        // construir el request body con auth_key incluido
-        const formData = new URLSearchParams();
-        formData.append('auth_key', DEEPL_API_KEY);
-        formData.append('text', texto);
-        formData.append('target_lang', targetLang);
-        formData.append('source_lang', 'EN');
+        // construir URL con parametros
+        const params = new URLSearchParams({
+            'auth_key': DEEPL_API_KEY,
+            'text': texto,
+            'target_lang': targetLang,
+            'source_lang': 'EN'
+        });
         
-        const respuesta = await fetch('https://api-free.deepl.com/v2/translate', {
-            method: 'POST',
-            body: formData
+        const deeplUrl = `https://api-free.deepl.com/v2/translate?${params.toString()}`;
+        const proxyUrl = CORS_PROXY + encodeURIComponent(deeplUrl);
+        
+        const respuesta = await fetch(proxyUrl, {
+            method: 'GET'
         });
         
         if (!respuesta.ok) {
